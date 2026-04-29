@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Netflux | Browse</title>
+    <style>
+        /* Modern UI Theme */
+        :root {
+            --primary: #e50914;
+            --bg: #0f0f0f;
+            --sidebar-bg: #000;
+            --text-main: #ffffff;
+            --text-dim: #b3b3b3;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* SIDEBAR - Preserving your Toggle Logic */
+        .sidebar {
+            width: 70px;
+            background: var(--sidebar-bg);
+            height: 100vh;
+            padding: 20px 10px;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: sticky;
+            top: 0;
+            flex-shrink: 0;
+            z-index: 100;
+            border-right: 1px solid rgba(255,255,255,0.1);
+            overflow: hidden;
+        }
+
+        .sidebar.expanded { width: 220px; }
+
+        .toggle {
+            cursor: pointer;
+            font-size: 24px;
+            margin-bottom: 35px;
+            text-align: center;
+            color: var(--text-main);
+        }
+
+        .nav button {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            width: 100%;
+            padding: 12px 15px;
+            margin: 10px 0;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: 0.2s;
+        }
+
+        .nav button:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+
+        .nav button span { display: none; }
+        .sidebar.expanded .nav button span { display: inline; white-space: nowrap; }
+
+        /* MAIN CONTENT AREA */
+        .main {
+            flex: 1;
+            padding: 40px;
+            min-width: 0;
+        }
+
+        h1 { font-size: 32px; margin-bottom: 30px; font-weight: 700; }
+
+        /* SEARCH BAR */
+        .search-container { margin-bottom: 40px; }
+        #searchBox {
+            width: 100%;
+            max-width: 500px;
+            padding: 15px 25px;
+            border-radius: 30px;
+            border: 1px solid rgba(255,255,255,0.2);
+            font-size: 16px;
+            background: rgba(255,255,255,0.05);
+            color: white;
+            outline: none;
+            transition: 0.3s;
+        }
+        #searchBox:focus {
+            border-color: var(--primary);
+            background: rgba(255,255,255,0.1);
+            box-shadow: 0 0 15px rgba(229, 9, 20, 0.3);
+        }
+
+        /* MOVIE GRID */
+        #movies {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 25px;
+        }
+
+        /* MOVIE CARD */
+        .movie {
+            position: relative;
+            cursor: pointer;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #1a1a1a;
+            transition: transform 0.3s cubic-bezier(0.2, 1, 0.3, 1);
+            aspect-ratio: 2/3;
+        }
+
+        .movie:hover {
+            transform: scale(1.06);
+            z-index: 5;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+
+        .movie img { width: 100%; height: 100%; object-fit: cover; }
+
+        /* OVERLAY */
+        .overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.9) 10%, transparent 60%);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 20px;
+            opacity: 0;
+            transition: 0.3s;
+        }
+
+        .movie:hover .overlay { opacity: 1; }
+
+        .title { font-size: 14px; font-weight: 700; margin-bottom: 5px; }
+        
+        /* UPDATED: Meta color is now white */
+        .meta { font-size: 12px; color: #ffffff; font-weight: 600; }
+        
+        /* Style for crossed out rating */
+        .meta del { opacity: 0.5; text-decoration: line-through; }
+
+        /* RESPONSIVE */
+        @media (max-width: 600px) {
+            .sidebar { display: none; }
+            .main { padding: 20px; }
+            h1 { font-size: 24px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar" id="sidebar">
+        <div class="toggle" onclick="toggleSidebar()">☰</div>
+        <div class="nav">
+            <button onclick="loadTrending()">🔥 <span>Trending</span></button>
+            <button onclick="searchBox.value=''; loadTrending()">🏠 <span>Home</span></button>
+        </div>
+    </div>
+
+    <div class="main">
+        <h1>Explore</h1>
+        <div class="search-container">
+            <input id="searchBox" placeholder="Search movies or TV shows...">
+        </div>
+        <div id="movies"></div>
+    </div>
+
+    <script>
+        // BACKEND LOGIC
+        const API_KEY = "0478fa683b7742129c807f7b5d2ea427"; 
+        const searchBox = document.getElementById("searchBox");
+        let timeout;
+
+        function toggleSidebar() {
+            document.getElementById("sidebar").classList.toggle("expanded");
+        }
+
+        searchBox.addEventListener("input", () => {
+            clearTimeout(timeout);
+            timeout = setTimeout(searchMedia, 400);
+        });
+
+        async function searchMedia() {
+            const query = searchBox.value.trim();
+            if (query.length < 3) return loadTrending();
+
+            try {
+                const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${API_KEY}&query=${query}`);
+                const data = await res.json();
+                display(data.results);
+            } catch (err) { console.error("Search failed:", err); }
+        }
+
+        async function loadTrending() {
+            try {
+                const res = await fetch(`https://api.themoviedb.org/3/trending/all/week?api_key=${API_KEY}`);
+                const data = await res.json();
+                display(data.results);
+            } catch (err) { console.error("Trending failed:", err); }
+        }
+
+        function display(items) {
+            const container = document.getElementById("movies");
+            container.innerHTML = "";
+
+            items.forEach(item => {
+                if (!item.poster_path || item.media_type === "person") return;
+
+                const div = document.createElement("div");
+                div.className = "movie";
+
+                const title = item.title || item.name;
+                const year = (item.release_date || item.first_air_date || "").split("-")[0];
+                
+                // LOGIC: Check for 0 rating and apply crossed out effect
+                const ratingValue = item.vote_average || 0;
+                let ratingHTML = `⭐ ${ratingValue.toFixed(1)}`;
+                
+                if (ratingValue === 0) {
+                    ratingHTML = `<del>⭐ 0.0</del>`;
+                }
+
+                div.innerHTML = `
+                    <img src="https://image.tmdb.org/t/p/w500${item.poster_path}" alt="Poster">
+                    <div class="overlay">
+                        <div class="title">${title}</div>
+                        <div class="meta">${ratingHTML} • ${year}</div>
+                    </div>
+                `;
+
+                div.onclick = () => {
+                    window.location.href = `player.html?id=${item.id}&type=${item.media_type}`;
+                };
+
+                container.appendChild(div);
+            });
+        }
+
+        loadTrending();
+    </script>
+</body>
+</html>
